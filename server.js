@@ -8,11 +8,13 @@ const io = new Server(server, {
   cors: { origin: "*" }
 });
 
+const roomID = "sala-amigos-123";
+
 io.on('connection', (socket) => {
   console.log('Un usuario se ha conectado:', socket.id);
 
-  // Cuando un usuario se une a una sala
-  socket.on('join-room', (roomID) => {
+  // Cuando un usuario se une a la sala
+  socket.on('join-room', () => {
     socket.join(roomID);
     console.log(`Usuario ${socket.id} se unió a la sala ${roomID}`);
 
