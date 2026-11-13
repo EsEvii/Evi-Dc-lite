@@ -1,55 +1,47 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
+io.on("connection", (socket) => {
+    console.log("Usuario conectado:", socket.id);
 
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" }
-});
+    // Guardar un nombre temporal por defecto
+    socket.data.username = "Anónimo";
 
-const roomID = "sala-amigos-123";
+    // Cuando un usuario se une con su nombre personalizado
+    socket.on("join-room", (username) => {
+        if (username) socket.data.username = username;
+        
+        // Enviar lista de usuarios actuales con sus nombres a los demás
+        const usersInRoom = [];
+        for (let [id, sock] of io.of("/").sockets) {
+            if (id !== socket.id) {
+                usersInRoom.push({ id, username: sock.data.username });
+            }
+        }
+        socket.emit("existing-users", usersInRoom);
 
-io.on('connection', (socket) => {
-  console.log('Un usuario se ha conectado:', socket.id);
+        // Notificar a todos que un nuevo usuario se unió
+        socket.broadcast.emit("user-joined", { id: socket.id, username: socket.data.username });
+    });
 
-  // Cuando un usuario se une a la sala
-  socket.on('join-room', () => {
-    socket.join(roomID);
-    console.log(`Usuario ${socket.id} se unió a la sala ${roomID}`);
+    // Manejar el chat de texto general
+    socket.on("chat-message", (message) => {
+        io.emit("chat-message", { sender: socket.data.username, message });
+    });
 
-    // Avisar a los demás en la sala que alguien nuevo entró
-    socket.to(roomID).emit('user-joined', socket.id);
+    // Señalización WebRTC (ofertas, respuestas y candidatos ICE)
+    socket.on("offer", ({ to, offer }) => {
+        io.to(to).emit("offer", { from: socket.id, offer });
+    });
 
-    // Enviar al nuevo usuario la lista de los que ya están en la sala
-    const clientsInRoom = io.sockets.adapter.rooms.get(roomID);
-    const users = clientsInRoom ? Array.from(clientsInRoom) : [];
-    socket.emit('existing-users', users.filter(id => id !== socket.id));
-  });
+    socket.on("answer", ({ to, answer }) => {
+        io.to(to).emit("answer", { from: socket.id, answer });
+    });
 
-  // Reenviar oferta WebRTC
-  socket.on('offer', ({ to, offer }) => {
-    socket.to(to).emit('offer', { from: socket.id, offer });
-  });
+    socket.on("ice-candidate", ({ to, candidate }) => {
+        io.to(to).emit("ice-candidate", { from: socket.id, candidate });
+    });
 
-  // Reenviar respuesta WebRTC
-  socket.on('answer', ({ to, answer }) => {
-    socket.to(to).emit('answer', { from: socket.id, answer });
-  });
-
-  // Reenviar candidatos ICE de red
-  socket.on('ice-candidate', ({ to, candidate }) => {
-    socket.to(to).emit('ice-candidate', { from: socket.id, candidate });
-  });
-
-  // Manejar desconexiones
-  socket.on('disconnect', () => {
-    console.log('Usuario desconectado:', socket.id);
-    io.emit('user-left', socket.id);
-  });
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Servidor de señalización corriendo en el puerto ${PORT}`);
+    // Desconexión
+    socket.on("disconnect", () => {
+        io.emit("user-left", socket.id);
+        console.log("Usuario desconectado:", socket.id);
+    });
 });
